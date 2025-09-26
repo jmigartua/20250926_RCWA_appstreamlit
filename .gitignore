@@ -9,3 +9,4 @@ dist/
 .streamlit/
 .pytest_cache/
 .rcwa/
+.DS_Store
