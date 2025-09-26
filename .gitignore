@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.build/
+dist/
+.cache/
+.ipynb_checkpoints/
+.streamlit/
+.pytest_cache/
+.rcwa/

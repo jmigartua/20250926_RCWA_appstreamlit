@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rcwa-app"
+version = "0.1.0"
+description = "Interactive, modular RCWA emissivity app (UI-first, compute-agnostic)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Josu M. Igartua" }]
+keywords = ["RCWA", "emissivity", "optics", "periodic-structures", "streamlit", "xarray"]
+
+# Runtime deps for the skeleton you ran
+dependencies = [
+  "numpy>=1.26",
+  "xarray>=2024.3.0",
+  "pydantic>=2.6",
+  "plotly>=5.24",
+  "streamlit>=1.38",
+]
+
+# Optional groups you can install with: pip install -e .[dev]  (and/or [test], [docs])
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6",
+  "black>=24.8",
+  "mypy>=1.10",
+  "pytest>=8",
+  "pytest-xdist>=3",
+  "hypothesis>=6",
+  "build>=1.2",
+  "twine>=5",
+]
+docs = ["mkdocs-material>=9"]
+
+# (Optional) CLI entry point; see __main__.py snippet below
+[project.scripts]
+rcwa-app = "rcwa_app.__main__:main"
+
+[project.urls]
+Homepage = "https://example.com/rcwa-app"
+Repository = "https://example.com/rcwa-app.git"
+
+[tool.hatch.build.targets.wheel]
+# Package only the library code; UI script stays in the repo for dev
+packages = ["rcwa_app"]
+
+# ---------------- Developer tool config ----------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E203", "E501"]  # keep black compatibility & allow long lines in notebooks
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+pretty = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
