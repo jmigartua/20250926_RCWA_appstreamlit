@@ -29,13 +29,16 @@ dev = [
   "mypy>=1.10",
   "pytest>=8",
   "pytest-xdist>=3",
+  "pytest-cov>=5",
   "hypothesis>=6",
   "build>=1.2",
   "twine>=5",
 ]
+
 docs = ["mkdocs-material>=9"]
 
 # (Optional) CLI entry point; see __main__.py snippet below
+
 [project.scripts]
 rcwa-app = "rcwa_app.__main__:main"
 
@@ -45,6 +48,7 @@ Repository = "https://example.com/rcwa-app.git"
 
 [tool.hatch.build.targets.wheel]
 # Package only the library code; UI script stays in the repo for dev
+
 packages = ["rcwa_app"]
 
 # ---------------- Developer tool config ----------------
