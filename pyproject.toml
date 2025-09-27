@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "ruff>=0.6",
-  "black>=24.8",
+  "black==24.8.0", 
   "mypy>=1.10",
   "pytest>=8",
   "pytest-xdist>=3",
@@ -66,7 +66,8 @@ ignore = ["E501"]
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py310","py311"]
+
 
 [tool.mypy]
 python_version = "3.10"
