@@ -3,11 +3,11 @@
 #Produces shape-correct, deterministic surrogate data satisfying contracts.md.
 #"""
 from __future__ import annotations
+
 import numpy as np
 import xarray as xr
-from typing import List
 
-from rcwa_app.domain.models import SweepRequest, SolverResult, SolverScalars
+from rcwa_app.domain.models import SolverResult, SolverScalars, SweepRequest
 from rcwa_app.domain.ports import SolverEngine
 
 
@@ -16,7 +16,7 @@ class MockSolverEngine(SolverEngine):
         cfg = req.config
         lam = np.array(req.lambda_grid_um or [])
         th = np.array(req.theta_grid_deg or [])
-        pols: List[str] = ["TE", "TM"]  # always provide both for UI convenience
+        pols: list[str] = ["TE", "TM"]  # always provide both for UI convenience
 
         # Geometry-driven surrogate parameters
         Ax, Ay = cfg.geometry.surface.Ax_um, cfg.geometry.surface.Ay_um
@@ -36,7 +36,8 @@ class MockSolverEngine(SolverEngine):
 
         # Build eps(lambda, theta, pol)
         lam2d, th2d = np.meshgrid(lam, th, indexing="ij")
-        g = lambda mu, sig: np.exp(-0.5 * ((lam2d - mu) / (sig + 1e-9)) ** 2)
+        def g(mu, sig):
+            return np.exp(-0.5 * ((lam2d - mu) / (sig + 1e-9)) ** 2)
         base_profile = 0.6 * g(peak1, width) + 0.4 * g(peak2, 1.4 * width)
         base_profile *= (0.3 + 0.7 * np.clip((Ax + Ay) / (Lx + Ly + 1e-6), 0.0, 1.0))
 

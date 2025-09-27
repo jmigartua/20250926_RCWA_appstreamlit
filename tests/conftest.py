@@ -1,10 +1,10 @@
 from __future__ import annotations
-import numpy as np
+
 import pytest
 
-from rcwa_app.orchestration.session import default_config
-from rcwa_app.domain.models import SweepRequest
 from rcwa_app.adapters.solver_mock.engine import MockSolverEngine
+from rcwa_app.domain.models import SweepRequest
+from rcwa_app.orchestration.session import default_config
 from rcwa_app.plotting_plotly.presenter import PlotPresenterPlotly
 
 

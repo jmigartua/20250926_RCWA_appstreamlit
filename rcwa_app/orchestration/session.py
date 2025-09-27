@@ -3,28 +3,29 @@
 #"""
 
 from __future__ import annotations
+
 from dataclasses import dataclass, replace
-from typing import Optional, Tuple
+
 import numpy as np
 
 from rcwa_app.domain.models import (
-    ModelConfig,
     GeometryConfig,
-    TwoSinusoidSurface,
-    Layer,
     IlluminationConfig,
+    Layer,
+    ModelConfig,
     NumericsConfig,
-    ThermalPostConfig,
-    SweepRequest,
     SolverResult,
+    SweepRequest,
+    ThermalPostConfig,
+    TwoSinusoidSurface,
 )
 
 
 @dataclass(frozen=True)
 class AppSession:
     config: ModelConfig
-    last_request: Optional[SweepRequest] = None
-    last_result: Optional[SolverResult] = None
+    last_request: SweepRequest | None = None
+    last_result: SolverResult | None = None
 
 
 def default_config() -> ModelConfig:
@@ -62,8 +63,8 @@ def update_geometry(session: AppSession, **kwargs) -> AppSession:
     return replace(session, config=cfg)
 
 
-def update_illumination(session: AppSession, *, lambda_span: Tuple[float, float, int] | None = None,
-                        theta_span: Tuple[float, float, int] | None = None,
+def update_illumination(session: AppSession, *, lambda_span: tuple[float, float, int] | None = None,
+                        theta_span: tuple[float, float, int] | None = None,
                         polarization: str | None = None) -> AppSession:
     ill = session.config.illumination.model_copy(deep=True)
     if lambda_span is not None:

@@ -2,18 +2,20 @@
 #Ports (interfaces) for adapters. The UI and orchestration depend ONLY on these.
 #"""
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import List, Any
-from .models import ModelConfig, SweepRequest, SolverResult
+from typing import Any
+
+from .models import SolverResult, SweepRequest
 
 
 class MaterialDB(ABC):
     @abstractmethod
-    def list_materials(self) -> List[str]:
+    def list_materials(self) -> list[str]:
         """Return available material identifiers."""
 
     @abstractmethod
-    def get_nk(self, name: str, lambda_um: List[float]) -> Any:
+    def get_nk(self, name: str, lambda_um: list[float]) -> Any:
         """Return xarray.Dataset with coords lambda_um and data vars n, k."""
 
 

@@ -3,16 +3,17 @@
 #Run with:  streamlit run ui_streamlit/app.py
 #"""
 from __future__ import annotations
-import streamlit as st
-import numpy as np
 
+import numpy as np
+import streamlit as st
+
+from rcwa_app.adapters.solver_mock.engine import MockSolverEngine
 from rcwa_app.orchestration.session import (
+    build_sweep_request,
     init_session,
     update_geometry,
     update_illumination,
-    build_sweep_request,
 )
-from rcwa_app.adapters.solver_mock.engine import MockSolverEngine
 from rcwa_app.plotting_plotly.presenter import PlotPresenterPlotly
 
 # --- App bootstrap ---

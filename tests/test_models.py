@@ -1,16 +1,12 @@
 from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
-from rcwa_app.orchestration.session import default_config
 from rcwa_app.domain.models import (
     TwoSinusoidSurface,
-    GeometryConfig,
-    Layer,
-    ModelConfig,
-    IlluminationConfig,
-    NumericsConfig,
 )
+from rcwa_app.orchestration.session import default_config
 
 
 def test_default_config_is_valid():

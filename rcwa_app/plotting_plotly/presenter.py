@@ -2,11 +2,13 @@
 #Plotly-based presenter implementing PlotPresenter.
 #"""
 from __future__ import annotations
+
 import numpy as np
-import xarray as xr
 import plotly.graph_objects as go
-from rcwa_app.domain.ports import PlotPresenter
+import xarray as xr
+
 from rcwa_app.domain.models import SolverResult
+from rcwa_app.domain.ports import PlotPresenter
 
 
 class PlotPresenterPlotly(PlotPresenter):
