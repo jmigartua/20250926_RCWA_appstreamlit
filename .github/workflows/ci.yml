@@ -4,14 +4,21 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
-    name: build-test (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11"]
+
+    # Expose the Codecov token (if present) as an env var so we can safely
+    # check it in `if:` without referencing the `secrets` context there.
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     steps:
       - name: Checkout
@@ -23,79 +30,44 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      - name: Upgrade pip tooling
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+
       - name: Install project (editable) + dev extras
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          pip install -e .[dev]
 
       - name: Lint (ruff)
-        run: ruff check . --output-format=github
+        run: |
+          ruff check .
 
       - name: Format check (black)
-        run: black --check .
+        run: |
+          black --check .
 
       - name: Type-check (mypy)
-        run: mypy .
+        run: |
+          mypy
 
       - name: Run tests with coverage
         run: |
-          pytest -q --cov=rcwa_app --cov-report=xml --cov-report=term-missing
+          pytest -q --cov=rcwa_app --cov-report=xml:coverage.xml
 
-      # --- Artifacts (unique names per job to avoid 409 conflicts) ---
-      - name: Upload raw coverage data (.coverage*)
-        if: always()
+      # Use a per-matrix artifact name to avoid 409 conflicts between jobs.
+      - name: Upload coverage.xml as artifact (optional)
+        if: always()  # still upload even if tests failed, for debugging
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-data-py${{ matrix.python-version }}
-          path: |
-            .coverage*
-          if-no-files-found: ignore
-
-      - name: Upload coverage.xml (per job; optional)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml-py${{ matrix.python-version }}
+          name: coverage-xml-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
 
-  coverage-merge:
-    name: Merge & publish coverage
-    needs: build-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Download raw coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: coverage-data-py*
-          path: coverages
-          merge-multiple: true
-
-      - name: Combine to single .coverage and create XML
-        run: |
-          python -m pip install --upgrade coverage
-          # Combine all `.coverage*` files into one database:
-          coverage combine coverages
-          coverage xml -o coverage.xml
-          coverage report -m
-
-      - name: Upload combined coverage.xml (single artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
-
-      - name: Upload to Codecov (single upload)
-        if: ${{ secrets.CODECOV_TOKEN != '' }}
+      # Only attempt Codecov upload when the token is present.
+      - name: Upload to Codecov (token)
+        if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           files: coverage.xml
-          name: combined
-          fail_ci_if_error: true
+          verbose: true
