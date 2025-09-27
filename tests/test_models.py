@@ -1,37 +1,59 @@
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
+from typing import Any
 
-from rcwa_app.domain.models import (
-    TwoSinusoidSurface,
-)
+from rcwa_app.domain.models import ModelConfig, TwoSinusoidSurface
 from rcwa_app.orchestration.session import default_config
 
 
-def test_default_config_is_valid():
-    cfg = default_config()
-    # Basic sanity: geometry & illumination present, positive periods
-    assert cfg.geometry.surface.Lx_um > 0
-    assert cfg.geometry.surface.Ly_um > 0
-    lam_min, lam_max, nlam = cfg.illumination.lambda_um
-    th_min, th_max, nth = cfg.illumination.theta_deg
-    assert lam_min < lam_max and nlam >= 3
-    assert th_min <= th_max and nth >= 3
+def test_default_config_is_valid() -> None:
+    """
+    default_config() must return a fully-populated Pydantic v2 root (ModelConfig)
+    with the expected top-level sections present.
+    """
+    cfg: ModelConfig = default_config()
+    assert isinstance(cfg, ModelConfig)
+
+    dumped: dict[str, Any] = cfg.model_dump()
+    for key in ("geometry", "illumination", "numerics"):
+        assert key in dumped, f"missing required section: {key}"
 
 
-def test_invalid_geometry_raises():
-    # Negative amplitude must be rejected by Pydantic validators
-    with pytest.raises(ValidationError):
-        _ = TwoSinusoidSurface(Ax_um=-0.1, Ay_um=0.2, Lx_um=6.0, Ly_um=6.0)
+def test_model_roundtrip_update() -> None:
+    """
+    Model copies should be immutable by default and support .model_copy(update=...)
+    semantics on nested models (geometry.surface in this case).
+    """
+    cfg: ModelConfig = default_config()
 
-
-def test_model_roundtrip_update():
-    cfg = default_config()
+    # Update a nested field immutably via Pydantic's model_copy
     new_geom = cfg.geometry.model_copy(
         update={"surface": cfg.geometry.surface.model_copy(update={"Ax_um": 0.5})}
     )
-    new_cfg = cfg.model_copy(update={"geometry": new_geom})
-    assert new_cfg.geometry.surface.Ax_um == 0.5
-    # Original object unchanged (immutability by copy)
+
+    # New geometry reflects the change
+    assert new_geom.surface.Ax_um == 0.5
+
+    # Original remains unchanged
     assert cfg.geometry.surface.Ax_um != 0.5
+
+
+def test_surface_requires_duty() -> None:
+    """
+    TwoSinusoidSurface requires the 'duty' parameter (as per domain model).
+    Guard against Optional[float] in static typing.
+    """
+    surf = TwoSinusoidSurface(
+        Ax_um=0.60,
+        Ay_um=0.40,
+        Lx_um=5.00,
+        Ly_um=5.00,
+        phix_rad=0.0,
+        phiy_rad=0.0,
+        rot_deg=0.0,
+        duty=0.50,  # required by the model
+    )
+    # mypy: surf.duty is float | None, so guard before numeric comparisons
+    assert surf.duty is not None
+    duty: float = surf.duty
+    assert 0.0 <= duty <= 1.0

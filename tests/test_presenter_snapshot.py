@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
-def test_spectral_plot_snapshot_like(spectral_fig):
+def test_spectral_plot_snapshot_like(spectral_fig: Any) -> None:
     fig = spectral_fig
     # One trace labeled as unpolarized emissivity
     assert len(fig.data) == 1
@@ -20,9 +22,10 @@ def test_spectral_plot_snapshot_like(spectral_fig):
     assert x[0] == 3.0 and x[-1] == 5.0  # from small_grids fixture
     # y is bounded in [0,1] per contracts
     assert float(y.min()) >= 0.0 and float(y.max()) <= 1.0
+    assert spectral_fig is not None
 
 
-def test_map_eps_structure(map_fig):
+def test_map_eps_structure(map_fig: Any) -> None:
     fig = map_fig
     # Heatmap present with colorbar title ε
     assert len(fig.data) == 1
@@ -34,3 +37,4 @@ def test_map_eps_structure(map_fig):
     assert z.ndim == 2 and z.shape == (3, 3)
     # All values within [0,1]
     assert float(z.min()) >= 0.0 and float(z.max()) <= 1.0
+    assert map_fig is not None

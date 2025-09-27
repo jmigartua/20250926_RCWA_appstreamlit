@@ -4,6 +4,8 @@
 # """
 from __future__ import annotations
 
+from typing import Literal, cast
+
 import numpy as np
 import streamlit as st
 
@@ -15,6 +17,8 @@ from rcwa_app.orchestration.session import (
     update_illumination,
 )
 from rcwa_app.plotting_plotly.presenter import PlotPresenterPlotly
+
+Pol = Literal["TE", "TM", "UNPOL"]
 
 # --- App bootstrap ---
 if "session" not in st.session_state:
@@ -54,7 +58,6 @@ with st.sidebar:
         "Rotation (deg)", -90.0, 90.0, st.session_state.session.config.geometry.surface.rot_deg, 0.5
     )
 
-    # Apply geometry updates
     if st.button("Apply geometry", use_container_width=True):
         st.session_state.session = update_geometry(
             st.session_state.session,
@@ -79,13 +82,14 @@ with st.sidebar:
     th_max = st.number_input("θ max (deg)", value=float(th_max))
     nth = st.number_input("θ points", value=int(nth), min_value=3, max_value=721, step=1)
 
-    pol = st.selectbox(
+    pol_str: str = st.selectbox(
         "Polarization",
         ["TE", "TM", "UNPOL"],
         index=["TE", "TM", "UNPOL"].index(
             st.session_state.session.config.illumination.polarization
         ),
     )
+    pol: Pol = cast(Pol, pol_str)
 
     if st.button("Apply illumination", use_container_width=True):
         st.session_state.session = update_illumination(
@@ -127,7 +131,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("Energy residual |1−(R+T+A)|", f"{res.scalars.energy_residual:.2e}")
 with col2:
-    ds = res.data  # type: ignore
+    ds = res.data  # removed unnecessary type: ignore
     st.metric("λ points", int(ds.sizes["lambda_um"]))
 with col3:
     st.metric("θ points", int(ds.sizes["theta_deg"]))
