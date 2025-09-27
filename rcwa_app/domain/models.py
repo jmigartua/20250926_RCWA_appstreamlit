@@ -1,9 +1,9 @@
-#"""
-#Domain models (v1.0.0)
+# """
+# Domain models (v1.0.0)
 #
-#Pydantic v2 models define validated configuration and result containers.
-#Results are carried as xarray Datasets with named coordinates.
-#"""
+# Pydantic v2 models define validated configuration and result containers.
+# Results are carried as xarray Datasets with named coordinates.
+# """
 from __future__ import annotations
 
 from typing import Literal

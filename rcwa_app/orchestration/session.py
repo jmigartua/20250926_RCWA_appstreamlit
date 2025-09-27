@@ -1,6 +1,6 @@
-#"""
-#Session and reducers: a thin orchestration layer independent of UI.
-#"""
+# """
+# Session and reducers: a thin orchestration layer independent of UI.
+# """
 
 from __future__ import annotations
 
@@ -38,7 +38,9 @@ def default_config() -> ModelConfig:
             Layer(name="Substrate", thickness_um=None, material_ref="Steel"),
         ],
     )
-    ill = IlluminationConfig(lambda_um=(3.0, 22.0, 121), theta_deg=(0.0, 60.0, 61), psi_deg=0.0, polarization="TM")
+    ill = IlluminationConfig(
+        lambda_um=(3.0, 22.0, 121), theta_deg=(0.0, 60.0, 61), psi_deg=0.0, polarization="TM"
+    )
     num = NumericsConfig(N_orders=15, factorization="LI_FAST", s_matrix=True, tol=1e-6)
     cfg = ModelConfig(
         geometry=geom,
@@ -57,15 +59,21 @@ def init_session() -> AppSession:
 
 def update_geometry(session: AppSession, **kwargs) -> AppSession:
     geom = session.config.geometry.model_copy(deep=True)
-    surf = geom.surface.model_copy(update={k: v for k, v in kwargs.items() if hasattr(geom.surface, k)})
+    surf = geom.surface.model_copy(
+        update={k: v for k, v in kwargs.items() if hasattr(geom.surface, k)}
+    )
     geom = geom.model_copy(update={"surface": surf})
     cfg = session.config.model_copy(update={"geometry": geom})
     return replace(session, config=cfg)
 
 
-def update_illumination(session: AppSession, *, lambda_span: tuple[float, float, int] | None = None,
-                        theta_span: tuple[float, float, int] | None = None,
-                        polarization: str | None = None) -> AppSession:
+def update_illumination(
+    session: AppSession,
+    *,
+    lambda_span: tuple[float, float, int] | None = None,
+    theta_span: tuple[float, float, int] | None = None,
+    polarization: str | None = None,
+) -> AppSession:
     ill = session.config.illumination.model_copy(deep=True)
     if lambda_span is not None:
         ill.lambda_um = lambda_span

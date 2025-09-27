@@ -1,6 +1,6 @@
-#"""
-#Ports (interfaces) for adapters. The UI and orchestration depend ONLY on these.
-#"""
+# """
+# Ports (interfaces) for adapters. The UI and orchestration depend ONLY on these.
+# """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

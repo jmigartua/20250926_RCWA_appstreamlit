@@ -1,6 +1,6 @@
-#"""
-#Plotly-based presenter implementing PlotPresenter.
-#"""
+# """
+# Plotly-based presenter implementing PlotPresenter.
+# """
 from __future__ import annotations
 
 import numpy as np
@@ -24,10 +24,14 @@ class PlotPresenterPlotly(PlotPresenter):
         i = int(np.argmin(np.abs(thetas - fixed_theta)))
         eps_line = self._unpolarized(ds["eps"]).isel(theta_deg=i)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=eps_line.coords["lambda_um"].values,
-                                 y=eps_line.values,
-                                 mode="lines",
-                                 name="ε (unpolarized)"))
+        fig.add_trace(
+            go.Scatter(
+                x=eps_line.coords["lambda_um"].values,
+                y=eps_line.values,
+                mode="lines",
+                name="ε (unpolarized)",
+            )
+        )
         fig.update_layout(
             xaxis_title="Wavelength λ (μm)",
             yaxis_title="Directional emissivity ε",

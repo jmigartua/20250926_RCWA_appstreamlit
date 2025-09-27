@@ -1,7 +1,7 @@
-#"""
-#Streamlit UI — wired to the mock solver via orchestration.session ports.
-#Run with:  streamlit run ui_streamlit/app.py
-#"""
+# """
+# Streamlit UI — wired to the mock solver via orchestration.session ports.
+# Run with:  streamlit run ui_streamlit/app.py
+# """
 from __future__ import annotations
 
 import numpy as np
@@ -32,19 +32,39 @@ with st.sidebar:
     st.caption("(Presets store/load to be added later)")
 
     st.header("Geometry")
-    Ax = st.slider("Ax (μm)", 0.0, 2.0, st.session_state.session.config.geometry.surface.Ax_um, 0.01)
-    Ay = st.slider("Ay (μm)", 0.0, 2.0, st.session_state.session.config.geometry.surface.Ay_um, 0.01)
-    Lx = st.slider("Lx (μm)", 0.2, 20.0, st.session_state.session.config.geometry.surface.Lx_um, 0.1)
-    Ly = st.slider("Ly (μm)", 0.2, 20.0, st.session_state.session.config.geometry.surface.Ly_um, 0.1)
-    phix = st.slider("φx (rad)", -np.pi, np.pi, st.session_state.session.config.geometry.surface.phix_rad, 0.01)
-    phiy = st.slider("φy (rad)", -np.pi, np.pi, st.session_state.session.config.geometry.surface.phiy_rad, 0.01)
-    rot = st.slider("Rotation (deg)", -90.0, 90.0, st.session_state.session.config.geometry.surface.rot_deg, 0.5)
+    Ax = st.slider(
+        "Ax (μm)", 0.0, 2.0, st.session_state.session.config.geometry.surface.Ax_um, 0.01
+    )
+    Ay = st.slider(
+        "Ay (μm)", 0.0, 2.0, st.session_state.session.config.geometry.surface.Ay_um, 0.01
+    )
+    Lx = st.slider(
+        "Lx (μm)", 0.2, 20.0, st.session_state.session.config.geometry.surface.Lx_um, 0.1
+    )
+    Ly = st.slider(
+        "Ly (μm)", 0.2, 20.0, st.session_state.session.config.geometry.surface.Ly_um, 0.1
+    )
+    phix = st.slider(
+        "φx (rad)", -np.pi, np.pi, st.session_state.session.config.geometry.surface.phix_rad, 0.01
+    )
+    phiy = st.slider(
+        "φy (rad)", -np.pi, np.pi, st.session_state.session.config.geometry.surface.phiy_rad, 0.01
+    )
+    rot = st.slider(
+        "Rotation (deg)", -90.0, 90.0, st.session_state.session.config.geometry.surface.rot_deg, 0.5
+    )
 
     # Apply geometry updates
     if st.button("Apply geometry", use_container_width=True):
         st.session_state.session = update_geometry(
             st.session_state.session,
-            Ax_um=Ax, Ay_um=Ay, Lx_um=Lx, Ly_um=Ly, phix_rad=phix, phiy_rad=phiy, rot_deg=rot,
+            Ax_um=Ax,
+            Ay_um=Ay,
+            Lx_um=Lx,
+            Ly_um=Ly,
+            phix_rad=phix,
+            phiy_rad=phiy,
+            rot_deg=rot,
         )
 
     st.divider()
@@ -59,9 +79,13 @@ with st.sidebar:
     th_max = st.number_input("θ max (deg)", value=float(th_max))
     nth = st.number_input("θ points", value=int(nth), min_value=3, max_value=721, step=1)
 
-    pol = st.selectbox("Polarization", ["TE", "TM", "UNPOL"], index=["TE","TM","UNPOL"].index(
-        st.session_state.session.config.illumination.polarization
-    ))
+    pol = st.selectbox(
+        "Polarization",
+        ["TE", "TM", "UNPOL"],
+        index=["TE", "TM", "UNPOL"].index(
+            st.session_state.session.config.illumination.polarization
+        ),
+    )
 
     if st.button("Apply illumination", use_container_width=True):
         st.session_state.session = update_illumination(
@@ -74,9 +98,13 @@ with st.sidebar:
     st.divider()
     st.header("Numerics (placeholder)")
     st.caption("Shown for completeness; mock engine ignores these.")
-    _N = st.number_input("Fourier orders (odd)", value=st.session_state.session.config.numerics.N_orders, step=2)
-    _fac = st.selectbox("Factorization", ["LI_FAST","LI_STRICT","NONE"], index=0)
-    _tol = st.number_input("Tolerance", value=st.session_state.session.config.numerics.tol, format="%.1e")
+    _N = st.number_input(
+        "Fourier orders (odd)", value=st.session_state.session.config.numerics.N_orders, step=2
+    )
+    _fac = st.selectbox("Factorization", ["LI_FAST", "LI_STRICT", "NONE"], index=0)
+    _tol = st.number_input(
+        "Tolerance", value=st.session_state.session.config.numerics.tol, format="%.1e"
+    )
 
     st.divider()
     run = st.button("Run (mock)", type="primary", use_container_width=True)
@@ -108,7 +136,12 @@ with col3:
 _tab1, _tab2, _tab3 = st.tabs(["Spectral scans", "Maps", "Orders (sample)"])
 
 with _tab1:
-    theta_pick = st.slider("θ for ε(λ) plot", float(ds.theta_deg.min()), float(ds.theta_deg.max()), float(ds.theta_deg.values[len(ds.theta_deg)//2]))
+    theta_pick = st.slider(
+        "θ for ε(λ) plot",
+        float(ds.theta_deg.min()),
+        float(ds.theta_deg.max()),
+        float(ds.theta_deg.values[len(ds.theta_deg) // 2]),
+    )
     fig1 = presenter.spectral_plot(res, theta_pick)
     st.plotly_chart(fig1, use_container_width=True)
 
@@ -117,8 +150,8 @@ with _tab2:
     st.plotly_chart(fig2, use_container_width=True)
 
 with _tab3:
-    il = st.slider("λ index", 0, int(ds.sizes["lambda_um"]) - 1, int(ds.sizes["lambda_um"])//2)
-    it = st.slider("θ index", 0, int(ds.sizes["theta_deg"]) - 1, int(ds.sizes["theta_deg"])//2)
+    il = st.slider("λ index", 0, int(ds.sizes["lambda_um"]) - 1, int(ds.sizes["lambda_um"]) // 2)
+    it = st.slider("θ index", 0, int(ds.sizes["theta_deg"]) - 1, int(ds.sizes["theta_deg"]) // 2)
     fig3 = presenter.orders_plot(res, il, it)
     st.plotly_chart(fig3, use_container_width=True)
 

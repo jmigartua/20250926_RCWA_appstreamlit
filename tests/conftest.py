@@ -20,8 +20,7 @@ def small_grids():
 def small_result(small_grids):
     lam, th = small_grids
     cfg = default_config()
-    req = SweepRequest(config=cfg, sweep_lambda=True,
-                       lambda_grid_um=lam, theta_grid_deg=th)
+    req = SweepRequest(config=cfg, sweep_lambda=True, lambda_grid_um=lam, theta_grid_deg=th)
     engine = MockSolverEngine()
     return engine.run(req)
 

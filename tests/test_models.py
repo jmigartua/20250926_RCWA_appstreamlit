@@ -28,9 +28,9 @@ def test_invalid_geometry_raises():
 
 def test_model_roundtrip_update():
     cfg = default_config()
-    new_geom = cfg.geometry.model_copy(update={
-        "surface": cfg.geometry.surface.model_copy(update={"Ax_um": 0.5})
-    })
+    new_geom = cfg.geometry.model_copy(
+        update={"surface": cfg.geometry.surface.model_copy(update={"Ax_um": 0.5})}
+    )
     new_cfg = cfg.model_copy(update={"geometry": new_geom})
     assert new_cfg.geometry.surface.Ax_um == 0.5
     # Original object unchanged (immutability by copy)

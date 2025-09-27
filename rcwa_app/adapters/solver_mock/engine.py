@@ -1,7 +1,7 @@
-#"""
-#Mock solver engine implementing the SolverEngine port.
-#Produces shape-correct, deterministic surrogate data satisfying contracts.md.
-#"""
+# """
+# Mock solver engine implementing the SolverEngine port.
+# Produces shape-correct, deterministic surrogate data satisfying contracts.md.
+# """
 from __future__ import annotations
 
 import numpy as np
@@ -32,14 +32,16 @@ class MockSolverEngine(SolverEngine):
 
         # Angle dependence
         cos_th = np.cos(np.deg2rad(th))
-        ang_gain = (0.6 + 0.4 * cos_th**2)  # shape (theta,)
+        ang_gain = 0.6 + 0.4 * cos_th**2  # shape (theta,)
 
         # Build eps(lambda, theta, pol)
         lam2d, th2d = np.meshgrid(lam, th, indexing="ij")
+
         def g(mu, sig):
             return np.exp(-0.5 * ((lam2d - mu) / (sig + 1e-9)) ** 2)
+
         base_profile = 0.6 * g(peak1, width) + 0.4 * g(peak2, 1.4 * width)
-        base_profile *= (0.3 + 0.7 * np.clip((Ax + Ay) / (Lx + Ly + 1e-6), 0.0, 1.0))
+        base_profile *= 0.3 + 0.7 * np.clip((Ax + Ay) / (Lx + Ly + 1e-6), 0.0, 1.0)
 
         eps_TM = np.clip(amp_TM * base_profile * ang_gain[None, :], 0.0, 1.0)
         eps_TE = np.clip(amp_TE * base_profile * ang_gain[None, :], 0.0, 1.0)
@@ -85,7 +87,9 @@ class MockSolverEngine(SolverEngine):
         )
 
         # Energy residual diagnostic
-        residual = float(np.nanmax(np.abs(ds["Rsum"].values + ds["Tsum"].values + ds["Asum"].values - 1.0)))
+        residual = float(
+            np.nanmax(np.abs(ds["Rsum"].values + ds["Tsum"].values + ds["Asum"].values - 1.0))
+        )
         scalars = SolverScalars(energy_residual=residual, notes="mock")
 
         return SolverResult(data=ds, scalars=scalars, schema_version="1.0.0")
