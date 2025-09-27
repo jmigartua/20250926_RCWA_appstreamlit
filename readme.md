@@ -1,4 +1,4 @@
-# RCWA Emissivity App — UI‑first, Compute‑agnostic
+# RCWA Emissivity App — UI‑first, Compute‑agnostic 
 
 An interactive, modular application for **directional spectral emissivity** modelling based on **RCWA/Fourier Modal Method**. The architecture is deliberately **UI‑first** and **compute‑agnostic**: the Streamlit interface drives an **orchestrator** that speaks to swappable **ports** (interfaces). Concrete solvers (a deterministic **mock** and, later, a **real RCWA** engine) are plug‑in adapters that comply with the same **data contracts**.
 
