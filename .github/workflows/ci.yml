@@ -48,7 +48,7 @@ jobs:
 
       - name: Type-check (mypy)
         run: |
-          mypy
+          mypy .
 
       - name: Run tests with coverage
         run: |
