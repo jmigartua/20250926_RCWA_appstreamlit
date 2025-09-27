@@ -3,12 +3,17 @@
 # """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import plotly.graph_objects as go
 import xarray as xr
 
 from rcwa_app.domain.models import SolverResult
 from rcwa_app.domain.ports import PlotPresenter
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class PlotPresenterPlotly(PlotPresenter):
@@ -76,4 +81,27 @@ class PlotPresenterPlotly(PlotPresenter):
             template="plotly_white",
             title="Order-resolved Rm/Tm",
         )
+        return fig
+
+    def spectral_overlay(
+        self,
+        result: Any,  # was "SolverResult"
+        fixed_theta: float,
+        ref_df: "pd.DataFrame",
+        ref_name: str = "reference",
+    ) -> Any:  # or "-> go.Figure" if you prefer
+        import plotly.graph_objects as go
+
+        base_fig = self.spectral_plot(result, fixed_theta)
+        fig = go.Figure(base_fig)
+        fig.add_trace(
+            go.Scatter(
+                x=ref_df["lambda_um"],
+                y=ref_df["eps"],
+                mode="lines+markers",
+                name=f"ε (ref: {ref_name})",
+                line=dict(dash="dash"),
+            )
+        )
+        fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0))
         return fig

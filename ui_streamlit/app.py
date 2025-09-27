@@ -4,15 +4,17 @@
 # """
 from __future__ import annotations
 
-# stdlib / 3p
-from typing import Literal, cast
+from typing import Optional, cast
 
+# stdlib / 3p
 import numpy as np
+import pandas as pd
 import streamlit as st
 
 # local imports — keep these here (no code above)
 from rcwa_app.adapters.presets_local.store import LocalPresetStore
 from rcwa_app.adapters.solver_mock.engine import MockSolverEngine
+from rcwa_app.adapters.validation_csv.loader import Pol, map_columns, read_csv_text
 from rcwa_app.exporting.io import (
     dataset_line_at_theta,
     dataset_long_table,
@@ -27,9 +29,11 @@ from rcwa_app.orchestration.session import (
 )
 from rcwa_app.plotting_plotly.presenter import PlotPresenterPlotly
 from rcwa_app.reports.methods import methods_markdown
+from rcwa_app.reports.validation import make_record, to_json_bytes
+from rcwa_app.validation.metrics import badge_for_rmse, rmse_eps_on_common_lambda
 
 # type alias AFTER all imports (ok for Ruff)
-Pol = Literal["TE", "TM", "UNPOL"]
+# Pol = Literal["TE", "TM", "UNPOL"]
 
 # --- App bootstrap ---
 if "session" not in st.session_state:
@@ -157,7 +161,9 @@ with col4:
     st.download_button("Download methods.md", data=md.encode("utf-8"), file_name="methods.md")
 
 # Tabs
-_tab1, _tab2, _tab3 = st.tabs(["Spectral scans", "Maps", "Orders (sample)"])
+_tab1, _tab2, _tab3, _tab4 = st.tabs(
+    ["Spectral scans", "Maps", "Orders (sample)", "Validation"]
+)  # new _tab4
 
 with _tab1:
     theta_pick = st.slider(
@@ -206,3 +212,69 @@ with _tab3:
     it = st.slider("θ index", 0, int(ds.sizes["theta_deg"]) - 1, int(ds.sizes["theta_deg"]) // 2)
     fig3 = presenter.orders_plot(res, il, it)
     st.plotly_chart(fig3, use_container_width=True)
+
+with _tab4:
+    st.subheader("Validation against reference CSV")
+    # --- File upload & column mapping ---
+    up = st.file_uploader("Upload CSV (reference)", type=["csv"])  # returns UploadedFile or None
+    if up is not None:
+        text = up.getvalue().decode("utf-8", errors="ignore")
+        df_raw = read_csv_text(text)
+        st.write("Columns:", list(df_raw.columns))
+        c1, c2 = st.columns(2)
+        with c1:
+            lam_col = st.selectbox("Map: wavelength column", list(df_raw.columns))
+        with c2:
+            eps_col = st.selectbox("Map: emissivity column", list(df_raw.columns))
+
+        df_ref: Optional[pd.DataFrame] = None
+        try:
+            df_ref = map_columns(df_raw, lam_col=lam_col, eps_col=eps_col)
+        except KeyError as e:
+            st.error(str(e))
+            df_ref = None
+
+        if df_ref is not None:
+            # --- Metadata ---
+            c3, c4, c5 = st.columns([2, 1, 1])
+            with c3:
+                ds_name = st.text_input("Dataset name", value=up.name)
+            with c4:
+                theta_sel = st.number_input(
+                    "θ (deg)", value=float(ds.theta_deg.values[len(ds.theta_deg) // 2])
+                )
+            with c5:
+                pol_sel = st.selectbox("pol", ["UNPOL", "TE", "TM"], index=0)
+
+            # --- Thresholds & RMSE ---
+            c6, c7 = st.columns(2)
+            with c6:
+                pass_th = float(st.number_input("PASS ≤", value=0.03, step=0.005, format="%.3f"))
+            with c7:
+                warn_th = float(st.number_input("WARN ≤", value=0.07, step=0.005, format="%.3f"))
+
+            rmse = rmse_eps_on_common_lambda(ds, theta_deg=float(theta_sel), ref=df_ref)
+            badge = badge_for_rmse(rmse, pass_th=pass_th, warn_th=warn_th)
+
+            # --- Overlay plot ---
+            figv = presenter.spectral_overlay(res, float(theta_sel), df_ref, ref_name=ds_name)
+            st.plotly_chart(figv, use_container_width=True)
+
+            # --- Badge/KPIs ---
+            st.metric("RMSE", f"{rmse:.4f}")
+            if badge == "PASS":
+                st.success("PASS: within threshold")
+            elif badge == "WARN":
+                st.warning("WARN: borderline")
+            else:
+                st.error("FAIL: exceeds threshold")
+
+            # --- Save validation record ---
+            rec = make_record(
+                ds_name, float(theta_sel), pol_sel, float(rmse), pass_th=pass_th, warn_th=warn_th
+            )
+            st.download_button(
+                "Download validation.json", data=to_json_bytes(rec), file_name="validation.json"
+            )
+    else:
+        st.info("Upload a CSV to run validation.")
