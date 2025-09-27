@@ -146,21 +146,45 @@ class MockSolverEngine:
 
         emiss = np.clip(pol_scale * base * ang, 0.0, 1.0)
 
+        # Small, nonzero transmission; energy by construction
+        Tsum = 0.02 * (1.0 - emiss)
+        Tsum = np.clip(Tsum, 0.0, 0.05)
+        Asum = emiss
+        Rsum = np.clip(1.0 - Asum - Tsum, 0.0, 1.0)
+
+        # Order-resolved split across m = −2..+2 (deterministic weights)
+        orders = np.arange(-2, 3, 1)  # [-2, -1, 0, 1, 2]
+        w = np.exp(-0.5 * (orders / 1.0) ** 2)
+        w = (w / w.sum()).astype(float)
+        # Broadcast totals into order dimension: (order, λ, θ)
+        Rm = np.einsum("ij,k->kij", Rsum, w)
+        Tm = np.einsum("ij,k->kij", Tsum, w)
+
+        # Assemble dataset with required variables
         ds = xr.Dataset(
             data_vars=dict(
-                eps=(("lambda_um", "theta_deg"), emiss),  # <-- was 'emissivity'
+                eps=(("lambda_um", "theta_deg"), emiss),
+                Rsum=(("lambda_um", "theta_deg"), Rsum),
+                Tsum=(("lambda_um", "theta_deg"), Tsum),
+                Asum=(("lambda_um", "theta_deg"), Asum),
+                Rm=(("order", "lambda_um", "theta_deg"), Rm),
+                Tm=(("order", "lambda_um", "theta_deg"), Tm),
             ),
             coords=dict(
                 lambda_um=lam,
                 theta_deg=th,
+                order=orders,
             ),
             attrs=dict(
                 polarization=pol,
-                note="Mock engine result",
+                note="Mock engine: energy-conserving surrogate (not physically accurate).",
             ),
         )
 
+        # Scalar diagnostic: max |1−(R+T+A)|
         class _Scalars:
-            energy_residual = float(np.abs(1.0 - emiss.mean()))
+            energy_residual = float(
+                np.nanmax(np.abs(ds["Rsum"].values + ds["Tsum"].values + ds["Asum"].values - 1.0))
+            )
 
         return MockResult(scalars=_Scalars(), data=ds)
