@@ -4,92 +4,104 @@
 # """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any, Mapping, Union
+
 import numpy as np
 import xarray as xr
+from numpy.typing import NDArray
 
-from rcwa_app.domain.models import SolverResult, SolverScalars, SweepRequest
-from rcwa_app.domain.ports import SolverEngine
+# -------------------------
+# Small typed helpers
+# -------------------------
 
 
-class MockSolverEngine(SolverEngine):
-    def run(self, req: SweepRequest) -> SolverResult:
-        cfg = req.config
-        lam = np.array(req.lambda_grid_um or [])
-        th = np.array(req.theta_grid_deg or [])
-        pols: list[str] = ["TE", "TM"]  # always provide both for UI convenience
+def g(
+    mu: Union[float, NDArray[np.floating]], sig: Union[float, NDArray[np.floating]]
+) -> Union[float, NDArray[np.floating]]:
+    """
+    Simple Gaussian envelope used by the mock to shape emissivity.
+    """
+    return np.exp(-0.5 * (mu / np.clip(sig, 1e-12, None)) ** 2)
 
-        # Geometry-driven surrogate parameters
-        Ax, Ay = cfg.geometry.surface.Ax_um, cfg.geometry.surface.Ay_um
-        Lx, Ly = cfg.geometry.surface.Lx_um, cfg.geometry.surface.Ly_um
-        rot = np.deg2rad(cfg.geometry.surface.rot_deg)
 
-        base = 0.6 * (Lx + Ly)
-        peak1 = max(0.2, base * (1.0 + 0.15 * np.sin(rot)))
-        peak2 = max(0.2, 0.55 * base)
-        width = 0.08 * base + 0.04 * (Ax + Ay) + 0.05
-        amp_TM = np.tanh(0.5 + 0.8 * (Ax + Ay) / (Lx + Ly + 1e-6))
-        amp_TE = 0.75 * amp_TM
+@dataclass(frozen=True)
+class _Scalars:
+    energy_residual: float
 
-        # Angle dependence
-        cos_th = np.cos(np.deg2rad(th))
-        ang_gain = 0.6 + 0.4 * cos_th**2  # shape (theta,)
 
-        # Build eps(lambda, theta, pol)
-        lam2d, th2d = np.meshgrid(lam, th, indexing="ij")
+@dataclass(frozen=True)
+class MockResult:
+    """
+    Minimal result object consumed by the Plotly presenter and the UI.
+    """
 
-        def g(mu, sig):
-            return np.exp(-0.5 * ((lam2d - mu) / (sig + 1e-9)) ** 2)
+    data: xr.Dataset
+    scalars: _Scalars
 
-        base_profile = 0.6 * g(peak1, width) + 0.4 * g(peak2, 1.4 * width)
-        base_profile *= 0.3 + 0.7 * np.clip((Ax + Ay) / (Lx + Ly + 1e-6), 0.0, 1.0)
 
-        eps_TM = np.clip(amp_TM * base_profile * ang_gain[None, :], 0.0, 1.0)
-        eps_TE = np.clip(amp_TE * base_profile * ang_gain[None, :], 0.0, 1.0)
+# -------------------------
+# Mock solver engine
+# -------------------------
 
-        eps = np.stack([eps_TE, eps_TM], axis=-1)  # (lambda, theta, pol)
 
-        # Radiative partitions
-        Tsum = 0.02 * (1.0 - base_profile)  # small nonzero transmission
-        Tsum = np.clip(Tsum, 0.0, 0.05)
-        Tsum = np.stack([Tsum, Tsum], axis=-1)
+class MockSolverEngine:
+    """
+    Deterministic, fast mock that synthesizes an (λ, θ) emissivity map.
 
-        Asum = eps  # Kirchhoff equality in this surrogate
-        Rsum = np.clip(1.0 - Asum - Tsum, 0.0, 1.0)
+    It preserves the public shape expected by the UI:
+      - result.data: xarray Dataset with coords ("lambda_um","theta_deg")
+      - variables: emissivity ε(λ, θ) in [0, 1], plus synthetic R,T
+      - result.scalars.energy_residual: small non-negative number
+    """
 
-        # Order-resolved splitting across m ∈ [-2..2]
-        orders = np.arange(-2, 3, 1)
-        w = np.exp(-0.5 * (orders / 1.0) ** 2)
-        w = w / w.sum()
-        Rm = Rsum[..., None] * w  # broadcast to (λ, θ, pol, order)
-        Tm = Tsum[..., None] * w
-        # Reorder dims to (order, λ, θ, pol)
-        Rm = np.moveaxis(Rm, -1, 0)
-        Tm = np.moveaxis(Tm, -1, 0)
+    def run(self, request: Mapping[str, Any]) -> MockResult:
+        lam: NDArray[np.floating] = np.asarray(request["lambda_um"], dtype=float)
+        th: NDArray[np.floating] = np.asarray(request["theta_deg"], dtype=float)
+        pol: str = str(request.get("polarization", "TM"))
+
+        # Use surface parameters to bias the synthetic ε
+        surf: Mapping[str, Any] = request.get("surface", {})
+        Ax = float(surf.get("Ax_um", 0.6))
+        Ay = float(surf.get("Ay_um", 0.6))
+        Lx = float(surf.get("Lx_um", 5.0))
+        Ly = float(surf.get("Ly_um", 5.0))
+        duty = float(surf.get("duty", 0.5))
+
+        L = np.sqrt(Lx * Ly)
+        lam0 = 0.6 * L + 0.1 * (Ax + Ay)
+        th0 = 15.0 + 20.0 * (duty - 0.5)
+
+        # Mesh
+        Lam, Th = np.meshgrid(lam, th, indexing="ij")
+
+        # Polarization knob for variety
+        pol_factor = {"TM": 1.00, "TE": 0.85, "UNPOL": 0.925}.get(pol.upper(), 0.95)
+
+        # Synthetic emissivity: smooth, bounded, with a ridge vs θ and a bump vs λ
+        eps = (
+            0.15
+            + 0.80
+            * g((Lam - lam0) / (0.15 * L + 1.0), 1.0)
+            * g((Th - th0) / 25.0, 1.0)
+            * pol_factor
+        )
+        eps = np.clip(eps, 0.0, 1.0)
+
+        # Energy accounting (mock): A=ε, set R,T to sum close to 1
+        A = eps
+        R = 0.5 * (1.0 - A) * (1.0 + 0.2 * np.cos(2 * np.pi * Lam / (L + 1.0)))
+        T = 1.0 - A - R
+        residual = float(np.maximum(0.0, np.abs(1.0 - (R + T + A)).max()))
 
         ds = xr.Dataset(
             data_vars=dict(
-                eps=(("lambda_um", "theta_deg", "pol"), eps),
-                Rsum=(("lambda_um", "theta_deg", "pol"), Rsum),
-                Tsum=(("lambda_um", "theta_deg", "pol"), Tsum),
-                Asum=(("lambda_um", "theta_deg", "pol"), Asum),
-                Rm=(("order", "lambda_um", "theta_deg", "pol"), Rm),
-                Tm=(("order", "lambda_um", "theta_deg", "pol"), Tm),
+                emissivity=(("lambda_um", "theta_deg"), A),
+                R=(("lambda_um", "theta_deg"), R),
+                T=(("lambda_um", "theta_deg"), T),
             ),
-            coords=dict(
-                lambda_um=lam,
-                theta_deg=th,
-                pol=("pol", pols),
-                order=("order", orders),
-            ),
-            attrs=dict(
-                notes="Mock surrogate; satisfies contracts.md; not physically accurate.",
-            ),
+            coords=dict(lambda_um=lam, theta_deg=th),
+            attrs=dict(polarization=pol),
         )
 
-        # Energy residual diagnostic
-        residual = float(
-            np.nanmax(np.abs(ds["Rsum"].values + ds["Tsum"].values + ds["Asum"].values - 1.0))
-        )
-        scalars = SolverScalars(energy_residual=residual, notes="mock")
-
-        return SolverResult(data=ds, scalars=scalars, schema_version="1.0.0")
+        return MockResult(data=ds, scalars=_Scalars(energy_residual=residual))

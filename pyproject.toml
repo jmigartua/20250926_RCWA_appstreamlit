@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "ruff>=0.6",
-  "black==24.8.0", 
+  "black==24.8.0",
   "mypy>=1.10",
   "pytest>=8",
   "pytest-xdist>=3",
@@ -37,8 +37,6 @@ dev = [
 
 docs = ["mkdocs-material>=9"]
 
-# (Optional) CLI entry point; see __main__.py snippet below
-
 [project.scripts]
 rcwa-app = "rcwa_app.__main__:main"
 
@@ -48,7 +46,6 @@ Repository = "https://example.com/rcwa-app.git"
 
 [tool.hatch.build.targets.wheel]
 # Package only the library code; UI script stays in the repo for dev
-
 packages = ["rcwa_app"]
 
 # ---------------- Developer tool config ----------------
@@ -63,11 +60,9 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # "tests/**" = ["D"]  # example, if you need it
 
-
 [tool.black]
 line-length = 100
 target-version = ["py310","py311"]
-
 
 [tool.mypy]
 python_version = "3.10"
@@ -75,6 +70,12 @@ warn_unused_ignores = true
 check_untyped_defs = true
 disallow_untyped_defs = true
 pretty = true
+
+# Per-module override: silence missing stubs for Plotly.
+# Equivalent to INI-style `[mypy-plotly.*] ignore_missing_imports = True`.
+[[tool.mypy.overrides]]
+module = ["plotly.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-q"
