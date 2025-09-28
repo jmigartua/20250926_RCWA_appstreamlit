@@ -181,6 +181,34 @@ def modal_uniform_te_tm(eps0: float, k0: float, kx: np.ndarray) -> tuple[np.ndar
     return gamma, W
 
 
+def _permute_columns_by_dominant_basis(W: np.ndarray) -> np.ndarray:
+    """
+    Return a column permutation that orders columns of W by the row index of
+    their dominant (max-abs) component. If duplicates occur, pick the next
+    strongest unused row to keep a one-to-one mapping.
+    """
+    S = np.abs(W)
+    # initial greedy pick: for each column, which row is largest?
+    dom = np.argmax(S, axis=0)  # shape (N,)
+    N = dom.size
+
+    used = set()
+    col_to_row = np.empty(N, dtype=int)
+
+    for j in range(N):
+        # resolve duplicates greedily by descending magnitude
+        order = np.argsort(-S[:, j])  # rows sorted by strength for this column
+        for i in order:
+            if int(i) not in used:
+                col_to_row[j] = int(i)
+                used.add(int(i))
+                break
+
+    # Now we want columns ordered by the associated row index (i.e., plane-wave order)
+    perm = np.argsort(col_to_row)  # permutation of columns
+    return perm
+
+
 # ----------------------------- Factorized convolution operators ------------------------
 
 
@@ -247,6 +275,46 @@ def operator_te_from_harmonics(
     return A
 
 
+def operator_tm_from_harmonics(
+    h_eta_nonneg: np.ndarray,
+    kx: np.ndarray,
+    k0: float,
+    *,
+    tau: float = 1e-12,
+) -> np.ndarray:
+    """
+    Build the TM operator on the full order grid using Lalanne's mixed factorization.
+
+    Inputs
+    ------
+    h_eta_nonneg : array of shape (M+1,)
+        Non-negative Fourier harmonics [η0, η1, ..., ηM] of η = 1/ε.
+    kx           : array of shape (2M+1,)
+        Order-wise in-plane wavenumbers (rad/μm), built on the same full grid.
+    k0           : float
+        Free-space wavenumber (rad/μm) = 2π/λ.
+    tau          : small Tikhonov threshold used in the Hermitian inverse.
+
+    Returns
+    -------
+    A : (2M+1, 2M+1) complex128
+        Hermitian operator whose eigenvalues are γ^2 (modal kz squared).
+
+    Notes
+    -----
+    Mixed factorization (Lalanne/Morris) uses η-harmonics to avoid the
+    Gibbs artefacts for TM. In the uniform limit (η = 1/ε0), this reduces to
+    A_TM = k0^2 * ε0 * I - Kx^2, i.e. identical to TE.
+    """
+    # Invert Toeplitz of η via the same stable Hermitian inverse used for TE factor
+    C_eta_inv = toeplitz_inverse_from_nonneg(np.asarray(h_eta_nonneg, dtype=float), tau=tau)
+    kx = np.asarray(kx, dtype=np.complex128)
+    K2 = np.diag(kx * kx)
+    k0c = np.complex128(k0)
+    # (k0^2) * C_eta^{-1}  −  Kx^2
+    return (k0c * k0c) * C_eta_inv.astype(np.complex128) - K2
+
+
 def eigs_te_from_profile(
     eps_hi: float,
     eps_lo: float,
@@ -311,39 +379,36 @@ def eigs_tm_from_profile(
     n_ambient: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    TM modal eigensystem on the FULL order grid (scaffold).
+    Compute the TM modal eigensystem for a 1D lamellar profile on the FULL order grid,
+    using Lalanne mixed factorization (η harmonics).
 
     Returns
     -------
-    gamma : (2M+1,) complex128
-        Modal kz (principal-branch square roots).
-    W     : (2M+1, 2M+1) complex128
-        Eigenvector matrix (columns).
-    kx    : (2M+1,) complex128
-        In-plane order grid.
-
-    Notes
-    -----
-    - Uniform-limit exactness is enforced by falling back to the TE closed-form
-      operator when the profile is uniform (eps_hi == eps_lo) or the duty
-      effectively turns the grating into a uniform slab (duty in {0, 1}).
-    - Non-uniform TM (true Lalanne mixed factorization) is introduced in R.3.
+    gamma : (2M+1,) complex128  modal kz  (principal-branch sqrt of eigenvalues)
+    W     : (2M+1, 2M+1) complex128  eigenvectors (columns, orthonormal for Hermitian A)
+    kx    : (2M+1,) complex128  in-plane order grid used to build the operator
     """
-    # Decide uniformity
-    is_uniform = (abs(float(eps_hi) - float(eps_lo)) < 1e-15) or (duty <= 0.0) or (duty >= 1.0)
-    if is_uniform:
-        # TE and TM coincide in the uniform limit; reuse TE machinery
-        return eigs_te_from_profile(
-            eps_hi=eps_hi,
-            eps_lo=eps_lo,
-            duty=min(max(duty, 0.0), 1.0),
-            M=M,
-            lambda_um=lambda_um,
-            theta_deg=theta_deg,
-            period_um=period_um,
-            n_ambient=n_ambient,
-        )
-    # Non-uniform TM (mixed factorization) lands in R.3
-    raise NotImplementedError(
-        "TM mixed factorization for non-uniform profiles will be added in R.3"
-    )
+    # 1) Harmonics (FULL) for η = 1/ε, then take non-negative part [η0..ηM]
+    lf = LamellarFourier(eps_hi=float(eps_hi), eps_lo=float(eps_lo))
+    h_eta_full = lf.eta_harmonics(duty=float(duty), M=int(M))
+    M_eff = int((h_eta_full.size - 1) // 2)
+    h_eta_nonneg = h_eta_full[M_eff:]  # [η0, η1, ..., ηM]
+
+    # 2) FULL order grid and kx
+    m = np.arange(-M_eff, M_eff + 1, dtype=np.complex128)
+    k0 = 2.0 * np.pi / float(lambda_um)
+    beta = np.complex128(n_ambient) * np.complex128(k0) * np.sin(np.deg2rad(theta_deg))
+    G = 2.0 * np.pi / float(period_um)
+    kx = beta + G * m
+
+    # 3) Hermitian operator and eigensolve
+    A = operator_tm_from_harmonics(h_eta_nonneg=h_eta_nonneg, kx=kx, k0=k0)
+    evals, evecs = np.linalg.eigh(A)
+
+    # NEW: reorder eigenpairs so columns correspond to increasing plane-wave (row) index
+    perm = _permute_columns_by_dominant_basis(evecs)
+    evecs = evecs[:, perm]
+    evals = evals[perm]
+
+    gamma = _safe_complex_sqrt(evals.astype(np.complex128))
+    return gamma, evecs.astype(np.complex128), kx
