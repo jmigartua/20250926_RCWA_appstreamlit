@@ -13,7 +13,9 @@ import streamlit as st
 
 # local imports — keep these here (no code above)
 from rcwa_app.adapters.presets_local.store import LocalPresetStore
-from rcwa_app.adapters.solver_mock.engine import MockSolverEngine
+from rcwa_app.adapters.solver_rcwa.engine import (
+    RcwaSolverEngine as MockSolverEngine,  # temporary swap for UI
+)
 from rcwa_app.adapters.validation_csv.loader import Pol, map_columns, read_csv_text
 from rcwa_app.exporting.io import (
     dataset_line_at_theta,
