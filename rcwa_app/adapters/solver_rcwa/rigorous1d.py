@@ -20,23 +20,33 @@ class FourierBuilder(Protocol):
         """
 
 
-def toeplitz_from_harmonics(h: np.ndarray) -> np.ndarray:
+def toeplitz_from_harmonics(h_nonneg: np.ndarray) -> np.ndarray:
     """
-    Build a real symmetric Toeplitz convolution matrix from the non-negative
-    harmonics h = [h0, h1, ..., h_M]. Returns C with shape (2M+1, 2M+1) and
-    C[i, j] = h[|i - j|] when |i - j| ≤ M, else 0.
+    Build a real symmetric Toeplitz convolution matrix C from the non-negative
+    Fourier harmonics of a real, even profile: h_nonneg = [h0, h1, ..., hM].
 
-    This matches the standard RCWA convention when we pass the slice h[M:].
+    Contract:
+      • h_nonneg: 1D, length L = M+1 ≥ 1 (float-like)
+      • return:  (N, N) with N = 2*M+1, using C[i, j] = h_{|i-j|} and 0 outside range.
     """
-    if h.ndim != 1 or h.size < 1:
-        raise ValueError("h must be a 1D array with at least one element (h0).")
-    M = h.size - 1
-    size = 2 * M + 1
-    C = np.empty((size, size), dtype=float)
-    for i in range(size):
-        for j in range(size):
-            k = abs(i - j)
-            C[i, j] = h[k] if k <= M else 0.0
+    h = np.asarray(h_nonneg, dtype=float).ravel()
+    if h.ndim != 1:
+        raise ValueError("h_nonneg must be a 1D array")
+    L = int(h.size)
+    if L < 1:
+        raise ValueError("h_nonneg length must be at least 1 (must include h0)")
+
+    M = L - 1
+    N = 2 * M + 1
+
+    # Zero-padded lookup: indices 0..M map to h0..hM, indices >M map to 0
+    lookup = np.zeros(2 * M + 1, dtype=float)
+    lookup[: M + 1] = h
+
+    # Toeplitz by absolute index difference
+    idx = np.arange(N)
+    d = np.abs(idx[:, None] - idx[None, :])  # values in [0, 2M]
+    C = lookup[d]
     return C
 
 
@@ -77,6 +87,33 @@ class LamellarFourier:
         C = toeplitz_from_harmonics(h[(h.size - 1) // 2 :])  # pass non-negative g (|i-j|) slice
         # The slice h[M:] creates an array [h0, h1, h2, ...] so C[i,j] = h[|i-j|]
         return diag, C
+
+    def eta_harmonics(self, duty: float, M: int) -> np.ndarray:
+        """
+        Full Fourier spectrum of η(x) = 1/ε(x) for a two-level 1D lamellar grating,
+        ordered g = -M..+M (length 2M+1). For positive, real ε, coefficients are real
+        and even. The DC term is the duty-weighted average of the two levels.
+        """
+        duty = float(np.clip(duty, 0.0, 1.0))
+        M = int(M)
+        eta_hi = 1.0 / float(self.eps_hi)
+        eta_lo = 1.0 / float(self.eps_lo)
+
+        out = np.zeros(2 * M + 1, dtype=float)
+
+        # g = 0 (DC)
+        out[M] = duty * eta_hi + (1.0 - duty) * eta_lo
+        if M == 0:
+            return out
+
+        # g ≠ 0: real, even spectrum for two-level lamellar profile
+        delta = eta_hi - eta_lo
+        for n in range(1, M + 1):
+            # 2 * (Δη * sin(π n duty) / (π n))  → cosine-series amplitude folded to ±n
+            coeff = 2.0 * delta * (np.sin(np.pi * n * duty) / (np.pi * n))
+            out[M + n] = coeff  # +n
+            out[M - n] = coeff  # −n
+        return out
 
 
 # ----------------------------- Order grid & kx utilities -----------------------------
@@ -180,3 +217,133 @@ def li_factor_operator_tm(h_nonneg: np.ndarray, tau: float = 1e-12) -> np.ndarra
     we return C_eps^{-1} as well; the full mixed form will replace this in Patch 4.
     """
     return toeplitz_inverse_from_nonneg(h_nonneg, tau=tau)
+
+
+# ----------------------------- TE modal eigenproblem (Li factorization) -----------------
+
+
+def operator_te_from_harmonics(
+    h_nonneg: np.ndarray,
+    kx: np.ndarray,
+    k0: float,
+) -> np.ndarray:
+    """
+    A_TE = k0^2 * C_eps - Kx^2, with C_eps built from non-negative harmonics [h0…hM].
+    Returns (N, N), N = 2*M+1 = len(kx).
+    """
+    C_eps = toeplitz_from_harmonics(h_nonneg)
+    kx = np.asarray(kx, dtype=np.complex128)
+    N = C_eps.shape[0]
+    if kx.size != N:
+        raise ValueError(
+            f"operator_te_from_harmonics: len(kx)={kx.size} must equal 2*M+1={N} "
+            "derived from the harmonics length."
+        )
+    k0c = np.complex128(k0)
+    K2 = np.diag(kx * kx)
+    A = (k0c * k0c) * C_eps.astype(np.complex128) - K2
+    # Hermitian enforcement (numerical) – safe, cheap
+    A = 0.5 * (A + A.conj().T)
+    return A
+
+
+def eigs_te_from_profile(
+    eps_hi: float,
+    eps_lo: float,
+    duty: float,
+    M: int,
+    lambda_um: float,
+    theta_deg: float,
+    period_um: float,
+    n_ambient: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute the TE modal eigensystem for a 1D lamellar profile on the FULL order grid.
+
+    Returns
+    -------
+    gamma : (2M+1,) complex128  modal kz  (principal-branch sqrt of eigenvalues)
+    W     : (2M+1, 2M+1) complex128  eigenvectors (columns, orthonormal for Hermitian A)
+    kx    : (2M+1,) complex128  in-plane order grid used to build the operator
+    """
+    # 1) Convolution matrix of ε from FULL harmonics (g = -M..+M)
+    lf = LamellarFourier(eps_hi=float(eps_hi), eps_lo=float(eps_lo))
+    h_full = lf.eps_harmonics(duty=float(duty), M=int(M))  # length 2M+1
+    # Derive M from harmonics length to ensure consistency
+    M_eff = int((h_full.size - 1) // 2)
+    # 2) FULL order grid m = -M_eff..+M_eff (length 2M+1)
+    m = np.arange(-M_eff, M_eff + 1, dtype=np.complex128)
+    # 3) Incident in-plane wavevector and grating momentum
+    k0 = 2.0 * np.pi / float(lambda_um)
+    theta_rad = float(np.deg2rad(theta_deg))
+    beta = np.complex128(n_ambient) * np.complex128(k0) * np.sin(theta_rad)  # n k0 sinθ
+    G = 2.0 * np.pi / float(period_um)  # 2π/Λ
+    # 4) FULL kx array: no propagating filter here; len(kx) == len(h_full)
+    kx = beta + G * m
+
+    # Build Hermitian TE operator and solve (pass non-negative harmonics [h0..hM])
+    h_nonneg = h_full[M_eff:]  # [h0, h1, ..., hM]
+    A = operator_te_from_harmonics(h_nonneg=h_nonneg, kx=kx, k0=k0)
+    # Hermitian ⇒ eigh gives orthonormal eigenvectors and real eigenvalues (up to FP noise)
+    evals, evecs = np.linalg.eigh(A)
+    # Reorder eigenpairs to align with the diffraction-order basis (m = -M..M):
+    # column j is assigned to the row index where |W_ij| is maximal.
+    dom = np.argmax(np.abs(evecs), axis=0)  # shape (2M+1,)
+    perm = np.argsort(dom)  # permutation to basis order
+    evecs = evecs[:, perm]
+    evals = evals[perm]
+
+    gamma = _safe_complex_sqrt(evals.astype(np.complex128))
+    return gamma, evecs.astype(np.complex128), kx
+
+
+# ----------------------------- TM modal eigenproblem (scaffold) -----------------------------
+
+
+def eigs_tm_from_profile(
+    eps_hi: float,
+    eps_lo: float,
+    duty: float,
+    M: int,
+    lambda_um: float,
+    theta_deg: float,
+    period_um: float,
+    n_ambient: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    TM modal eigensystem on the FULL order grid (scaffold).
+
+    Returns
+    -------
+    gamma : (2M+1,) complex128
+        Modal kz (principal-branch square roots).
+    W     : (2M+1, 2M+1) complex128
+        Eigenvector matrix (columns).
+    kx    : (2M+1,) complex128
+        In-plane order grid.
+
+    Notes
+    -----
+    - Uniform-limit exactness is enforced by falling back to the TE closed-form
+      operator when the profile is uniform (eps_hi == eps_lo) or the duty
+      effectively turns the grating into a uniform slab (duty in {0, 1}).
+    - Non-uniform TM (true Lalanne mixed factorization) is introduced in R.3.
+    """
+    # Decide uniformity
+    is_uniform = (abs(float(eps_hi) - float(eps_lo)) < 1e-15) or (duty <= 0.0) or (duty >= 1.0)
+    if is_uniform:
+        # TE and TM coincide in the uniform limit; reuse TE machinery
+        return eigs_te_from_profile(
+            eps_hi=eps_hi,
+            eps_lo=eps_lo,
+            duty=min(max(duty, 0.0), 1.0),
+            M=M,
+            lambda_um=lambda_um,
+            theta_deg=theta_deg,
+            period_um=period_um,
+            n_ambient=n_ambient,
+        )
+    # Non-uniform TM (mixed factorization) lands in R.3
+    raise NotImplementedError(
+        "TM mixed factorization for non-uniform profiles will be added in R.3"
+    )
