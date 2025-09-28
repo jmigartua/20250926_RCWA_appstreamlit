@@ -1,25 +1,35 @@
+# --- standard library / typing ----------------------------------------------------------
 from __future__ import annotations
 
-# stdlib / typing
 from pathlib import Path
 from typing import Any, Optional, cast
 
-# third-party
+# --- third-party -----------------------------------------------------------------------
 import numpy as np
 import pandas as pd
 import streamlit as st
+import xarray as xr
 
-# local: adapters & orchestration
+# --- first-party: presets & reports ----------------------------------------------------
 from rcwa_app.adapters.presets_local.store import LocalPresetStore
-from rcwa_app.adapters.registry import SolverEngine, list_engines, make_engine
+
+# --- first-party: registry & domain ports/models ---------------------------------------
+from rcwa_app.adapters.registry import list_engines, make_engine
+
+# --- first-party: validation tab --------------------------------------------------------
 from rcwa_app.adapters.validation_csv.loader import Pol, map_columns, read_csv_text
-from rcwa_app.domain.models import SweepRequest
+from rcwa_app.domain.models import SolverResult, SweepRequest
+from rcwa_app.domain.ports import SolverEngine
+
+# --- first-party: exporting and plotting -----------------------------------------------
 from rcwa_app.exporting.io import (
     dataset_line_at_theta,
     dataset_long_table,
     figure_to_png_bytes,
     to_csv_bytes,
 )
+
+# --- first-party: orchestration & configuration ----------------------------------------
 from rcwa_app.orchestration.session import (
     init_session,
     update_geometry,
@@ -27,6 +37,7 @@ from rcwa_app.orchestration.session import (
 )
 from rcwa_app.plotting_plotly.presenter import PlotPresenterPlotly
 from rcwa_app.reports.methods import methods_markdown
+from rcwa_app.validation.metrics import rmse_eps_on_common_lambda
 
 # --------------------------------------------------------------------------------------
 # App bootstrap
@@ -49,7 +60,15 @@ st.sidebar.header("Engine / Model Controls")
 
 # Engine selector (Registry)
 engine_name = st.sidebar.selectbox("Engine", list_engines(), index=0)
-engine: SolverEngine = make_engine(engine_name)
+
+engine_kwargs: dict[str, object] = {}
+if engine_name == "RCWA-1D (rigorous)":
+    with st.sidebar.expander("Rigorous mode (developer)", expanded=False):
+        mode = st.selectbox("Order distribution mode", ["skeleton", "rigorous-lite"], index=0)
+        engine_kwargs["mode"] = mode
+
+engine: SolverEngine = make_engine(engine_name, **engine_kwargs)
+
 
 # Geometry controls
 geom = session.config.geometry
@@ -154,13 +173,17 @@ req = SweepRequest(
 )
 
 # Run engine (single source of truth used by tabs below)
-res = engine.run(req)
-ds = res.data
+res: SolverResult = engine.run(req)
+ds: xr.Dataset = cast(xr.Dataset, res.data)
+
 
 # --------------------------------------------------------------------------------------
 # Tabs
 # --------------------------------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs(["Spectral scans", "Maps", "Orders (sample)", "Validation"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["Spectral scans", "Maps", "Orders (sample)", "Validation", "Thermal"]
+)
+
 
 # ---- Tab 1: Spectral scans -----------------------------------------------------------
 with tab1:
@@ -310,6 +333,57 @@ with tab4:
             )
     else:
         st.info("Upload a CSV to run validation.")
+
+# ---- Tab 5: Thermal -------------------------------------------------------------------
+with tab5:
+    st.subheader("Planck-weighted emissivity & hemispherical totals")
+
+    colT, colTheta = st.columns(2)
+    with colT:
+        T_K = float(st.number_input("Temperature (K)", min_value=1.0, value=1000.0, step=50.0))
+    with colTheta:
+        theta_opt = st.selectbox(
+            "Angle for line (deg) — choose 'Hemispherical' for average",
+            options=["Hemispherical"] + [f"{t:.1f}" for t in theta_grid],
+            index=0,
+        )
+
+    from rcwa_app.thermal.planck import hemispherical_average_eps, planck_weighted_band_eps
+
+    if theta_opt == "Hemispherical":
+        eps_bar, w = planck_weighted_band_eps(ds, T_K=T_K, theta_deg=None)
+        st.metric("ε̄ (Planck-weighted, hemispherical)", f"{eps_bar:.3f}")
+        # show hemispherical line too
+        hemi = hemispherical_average_eps(ds)
+        fig_hemi = presenter.spectral_plot(
+            res, fixed_theta=float(theta_grid[len(theta_grid) // 2])
+        )  # reuse
+        # Replace y with hemispherical curve for display
+        import plotly.graph_objects as go  # local import to avoid top-level dependency for mypy
+
+        fig_hemi.data = []  # clear
+        fig_hemi.add_trace(
+            go.Scatter(x=hemi["lambda_um"].values, y=hemi.values, mode="lines", name="ε̄_hemis(λ)")
+        )
+        st.plotly_chart(fig_hemi, use_container_width=True)
+    else:
+        theta_line = float(theta_opt)
+        eps_bar, w = planck_weighted_band_eps(ds, T_K=T_K, theta_deg=theta_line)
+        st.metric("ε̄ (Planck-weighted, line)", f"{eps_bar:.3f}")
+        fig_line = presenter.spectral_plot(res, fixed_theta=theta_line)
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    # Export the Planck weights on current λ grid
+    import pandas as _pd
+
+    df_w = _pd.DataFrame({"lambda_um": ds["lambda_um"].values, "planck_weight": w})
+    st.download_button(
+        "Download Planck weights (CSV)",
+        data=to_csv_bytes(df_w),
+        file_name=f"planck_weights_{int(T_K)}K.csv",
+        mime="text/csv",
+    )
+
 
 # --------------------------------------------------------------------------------------
 # Footer
