@@ -263,3 +263,66 @@ def layer_modal_tm_smatrix(
         kx=kx,
         thickness_um=float(thickness_um),
     )
+
+
+def layer_modal_te_from_profile(
+    *,
+    eps_hi: float,
+    eps_lo: float,
+    duty: float,
+    M: int,
+    lambda_um: float,
+    theta_deg: float,
+    period_um: float,
+    n_in: float,
+    n_out: float,
+    thickness_um: float,
+) -> SMatrix:
+    """
+    One-call TE layer S-matrix from a lamellar profile using Li TE boundary model.
+
+    Notes:
+      • Uses eigs_te_from_profile(...) to get (W, gamma, kx).
+      • The order-grid β = n_in * k0 * sin(theta) (so 'n_in' is used as the ambient for kx).
+      • Interfaces are Li TE (already implemented in layer_modal_te_smatrix).
+    """
+    # Local import to avoid top-level dependency ripple
+    from .rigorous1d import eigs_te_from_profile  # assumes this module is present and typed
+
+    gamma, W, kx = eigs_te_from_profile(
+        eps_hi=eps_hi,
+        eps_lo=eps_lo,
+        duty=duty,
+        M=M,
+        lambda_um=lambda_um,
+        theta_deg=theta_deg,
+        period_um=period_um,
+        n_ambient=n_in,  # keep the kx-consistency with the input side
+    )
+
+    k0 = 2.0 * np.pi / float(lambda_um)
+
+    return layer_modal_te_smatrix(
+        W=W,
+        gamma=gamma,
+        thickness_um=float(thickness_um),
+        k0=float(k0),
+        kx=kx,
+        n_in=float(n_in),
+        n_out=float(n_out),
+        boundary_model="li-te",
+    )
+
+
+def stack_starprod(layers: list[SMatrix]) -> SMatrix:
+    """
+    Compose a sequence of S-matrices: S_total = layers[0] ⊛ layers[1] ⊛ ... ⊛ layers[-1]
+    Safe on empty/one-length inputs.
+    """
+    if not layers:
+        raise ValueError("stack_starprod: need at least one layer S-matrix")
+
+    S_total = layers[0]
+    for S in layers[1:]:
+        S_total = s_starprod(S_total, S)
+    return S_total
